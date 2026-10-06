@@ -1,0 +1,35 @@
+# TanStack Start web app image (Nitro Node server).
+# Two targets:
+#   runtime (default) — production build, used by the `web` compose service
+#   dev               — Vite dev server with HMR, used by `web-dev` (source
+#                       is bind-mounted by docker-compose, so no rebuild needed)
+#
+# NOTE: VITE_POCKETBASE_URL is baked into the client bundle at BUILD time.
+# For local docker: default http://localhost:8090 is correct (the browser,
+# not the container, talks to PocketBase). For VPS/single-domain deploys,
+# rebuild with e.g. --build-arg VITE_POCKETBASE_URL=https://example.com
+FROM node:24-alpine AS base
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM base AS build
+COPY . .
+ARG VITE_POCKETBASE_URL=http://localhost:8090
+ENV VITE_POCKETBASE_URL=$VITE_POCKETBASE_URL
+RUN npm run build
+
+FROM node:24-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOST=0.0.0.0
+# Nitro node-server preset output (see .output/nitro.json)
+COPY --from=build /app/.output ./.output
+EXPOSE 3000
+CMD ["node", ".output/server/index.mjs"]
+
+FROM base AS dev
+COPY . .
+EXPOSE 3000
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
